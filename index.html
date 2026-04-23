@@ -17,25 +17,16 @@
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 177.78vw; max-width: 500px; max-height: 888px; background: var(--bg-color); overflow: hidden; border: 1px solid #1a1a2e; }
         canvas { width: 100%; height: 100%; display: block; }
-        
-        /* UI 레이어 */
         .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; text-align: center; }
         .blur-bg { background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(10px); }
-        
         #xp-bar-container { position: absolute; top: 0; left: 0; width: 100%; height: 10px; background: rgba(255,255,255,0.05); z-index: 50; }
         #xp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--main-color), #7000ff); box-shadow: 0 0 15px var(--main-color); transition: width 0.3s ease-out; }
-        
-        .stat-label { position: absolute; top: 22px; left: 20px; color: var(--main-color); font-weight: bold; z-index: 50; font-size: 14px; letter-spacing: 1px; }
-        
+        .stat-label { position: absolute; top: 22px; left: 20px; color: var(--main-color); font-weight: bold; z-index: 50; font-size: 14px; }
         button { padding: 15px 40px; font-size: 1.1rem; background: transparent; border: 2px solid var(--main-color); border-radius: 8px; color: var(--main-color); font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.3s; }
         button:active { background: var(--main-color); color: #000; }
-        
         .upgrade-btn { width: 85%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(0, 242, 255, 0.3); margin: 8px; padding: 20px; border-radius: 12px; font-size: 1.1rem; color: #fff; }
-        
         h1 { font-size: 2.8rem; color: #fff; text-shadow: 0 0 15px var(--main-color); margin: 0; font-weight: 900; line-height: 1.2; }
         .score-display { font-size: 3rem; font-weight: bold; color: var(--main-color); margin: 5px 0; }
-
-        /* 리더보드 스타일 */
         #leaderboard-list { width: 85%; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px; font-size: 0.9rem; margin-top: 15px; }
         .rank-item { display: flex; justify-content: space-between; margin: 4px 0; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         #player-name { padding: 10px; border-radius: 5px; border: 1px solid var(--main-color); background: #000; color: #fff; text-align: center; margin-bottom: 10px; width: 140px; }
@@ -50,30 +41,27 @@
     <div id="start-screen" class="overlay" style="background: var(--bg-color);">
         <p style="color: var(--main-color); margin-bottom: 5px; letter-spacing: 3px;">고압 전류 가동 준비</p>
         <h1>BANGWOOK<br>HVDC MAN</h1>
-        <button id="btn-start">시스텡 가동</button>
+        <button id="btn-start">게임 시작</button>
     </div>
 
     <div id="upgrade-menu" class="overlay blur-bg" style="display:none">
         <h3 style="font-size: 1.8rem; color: var(--main-color); margin-bottom: 20px;">모듈 업그레이드 선택</h3>
-        <button class="upgrade-btn" onclick="applyUpgrade('as')">⚡ 공격 속도(회로 효율) 증가</button>
-        <button class="upgrade-btn" onclick="applyUpgrade('range')">🌀 연쇄 범위(전도율) 증가</button>
-        <button class="upgrade-btn" onclick="applyUpgrade('spd')">🏃 이동 속도(출력) 증가</button>
+        <button class="upgrade-btn" data-type="as">⚡ 공격 속도 증가</button>
+        <button class="upgrade-btn" data-type="range">🌀 연쇄 범위 증가</button>
+        <button class="upgrade-btn" data-type="spd">🏃 이동 속도 증가</button>
     </div>
 
     <div id="game-over" class="overlay blur-bg" style="display:none">
         <h2 style="color: var(--enemy-color); font-size: 2.2rem; margin: 0;">시스템 과부하</h2>
         <div class="score-display" id="final-score">0</div>
-        
         <div id="save-area">
             <input type="text" id="player-name" placeholder="닉네임" maxlength="8">
             <button id="btn-save" style="margin-top:0; padding: 10px 20px; font-size: 0.9rem;">점수 기록</button>
         </div>
-
         <div id="leaderboard-list">
             <div id="rank-items">순위표 불러오는 중...</div>
         </div>
-
-        <button onclick="location.reload()" style="margin-top: 15px; padding: 10px 30px;">재시작</button>
+        <button id="btn-restart" style="margin-top: 15px; padding: 10px 30px;">재시작</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -83,7 +71,6 @@
     import { initializeApp } from "firebase/app";
     import { getDatabase, ref, set, push, onValue, query, orderByChild, limitToLast } from "firebase/database";
 
-    // Firebase 설정
     const firebaseConfig = {
         apiKey: "AIzaSyA7ut0Tm4qr4dGI3QnJD8kDREWgvKOhljA",
         authDomain: "bangwook-hvdc-man.firebaseapp.com",
@@ -100,7 +87,6 @@
     const ctx = canvas.getContext('2d');
     canvas.width = 540; canvas.height = 960;
 
-    // 게임 상태 및 변수
     let gameState = 'start';
     let player = { x: 270, y: 700, r: 18, spd: 3.2, lvl: 1, xp: 0, nextXp: 5 };
     let enemies = []; let gems = []; let lightningChains = [];
@@ -108,7 +94,6 @@
     let stats = { attackSpeed: 3000, chainRange: 160, chainCount: 3 };
     let joystick = { active: false, originX: 0, originY: 0, currX: 0, currY: 0, maxDist: 85, moveVec: { x: 0, y: 0 } };
 
-    // 조작 이벤트
     const getPos = (e) => {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -116,57 +101,58 @@
         return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
     };
 
-    window.addEventListener('touchstart', (e) => { if(gameState==='play') { e.preventDefault(); const p = getPos(e); joystick.active=true; joystick.originX=p.x; joystick.originY=p.y; } }, {passive:false});
-    window.addEventListener('touchmove', (e) => { if(joystick.active) { e.preventDefault(); const p = getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow, y:(dy/d)*pow}; } }, {passive:false});
-    window.addEventListener('touchend', () => { joystick.active=false; joystick.moveVec={x:0, y:0}; });
-    
-    // 마우스 지원 (PC 테스트용)
-    window.addEventListener('mousedown', (e) => { if(gameState==='play') { const p = getPos(e); joystick.active=true; joystick.originX=p.x; joystick.originY=p.y; } });
-    window.addEventListener('mousemove', (e) => { if(joystick.active) { const p = getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); if(d>0){const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow, y:(dy/d)*pow};} } });
-    window.addEventListener('mouseup', () => { joystick.active=false; joystick.moveVec={x:0, y:0}; });
+    // 터치/마우스 이벤트
+    const startInput = (e) => { if(gameState==='play') { const p = getPos(e); joystick.active=true; joystick.originX=p.x; joystick.originY=p.y; } };
+    const moveInput = (e) => { if(joystick.active) { if(e.touches) e.preventDefault(); const p = getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow, y:(dy/d)*pow}; } };
+    const endInput = () => { joystick.active=false; joystick.moveVec={x:0, y:0}; };
 
-    document.getElementById('btn-start').onclick = () => { document.getElementById('start-screen').style.display='none'; gameState='play'; lastAttackTime=performance.now(); requestAnimationFrame(loop); };
+    window.addEventListener('touchstart', startInput, {passive:false});
+    window.addEventListener('touchmove', moveInput, {passive:false});
+    window.addEventListener('touchend', endInput);
+    window.addEventListener('mousedown', startInput);
+    window.addEventListener('mousemove', moveInput);
+    window.addEventListener('mouseup', endInput);
 
-    // 리더보드 로직
-    window.applyUpgrade = (type) => {
-        if(type==='as') stats.attackSpeed = Math.max(300, stats.attackSpeed*0.7);
-        if(type==='range') { stats.chainRange+=50; stats.chainCount+=2; }
-        if(type==='spd') player.spd += 0.6;
-        document.getElementById('upgrade-menu').style.display='none'; gameState='play'; lastAttackTime=performance.now();
-    };
+    // 버튼 이벤트 리스너 (인라인 onclick 대신 사용)
+    document.getElementById('btn-start').addEventListener('click', () => {
+        document.getElementById('start-screen').style.display='none';
+        gameState='play'; lastAttackTime=performance.now(); requestAnimationFrame(loop);
+    });
 
-    const saveScore = () => {
+    document.querySelectorAll('.upgrade-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.getAttribute('data-type');
+            if(type==='as') stats.attackSpeed = Math.max(300, stats.attackSpeed*0.75);
+            if(type==='range') { stats.chainRange+=40; stats.chainCount+=2; }
+            if(type==='spd') player.spd += 0.8;
+            document.getElementById('upgrade-menu').style.display='none';
+            gameState='play'; lastAttackTime=performance.now();
+        });
+    });
+
+    document.getElementById('btn-restart').addEventListener('click', () => location.reload());
+
+    document.getElementById('btn-save').addEventListener('click', () => {
         const name = document.getElementById('player-name').value.trim() || "익명";
         if(score <= 0) return;
         push(ref(db, 'leaderboard'), { name, score, timestamp: Date.now() }).then(() => {
-            alert("점수가 등록되었습니다!"); document.getElementById('save-area').style.display='none';
+            alert("기록 완료!"); document.getElementById('save-area').style.display='none';
         });
-    };
-    document.getElementById('btn-save').onclick = saveScore;
+    });
 
-    const loadRank = () => {
-        const q = query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(5));
-        onValue(q, (snap) => {
-            const data = snap.val(); if(!data) { document.getElementById('rank-items').innerHTML="첫 기록을 남겨보세요!"; return; }
-            const sorted = Object.values(data).sort((a,b)=>b.score-a.score);
-            document.getElementById('rank-items').innerHTML = sorted.map((i,idx)=>`<div class="rank-item"><span>${idx+1}. ${i.name}</span><span>${i.score}점</span></div>`).join('');
-        });
-    };
-
-    // 그리기 함수들
+    // 렌더링 및 로직
     function drawWiz(x, y) {
         ctx.save(); ctx.shadowBlur=15; ctx.shadowColor='#00f2ff'; ctx.fillStyle='#4ecca3'; ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.moveTo(x-24,y-2); ctx.lineTo(x+24,y-2); ctx.lineTo(x,y-45); ctx.fill();
         ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x-7,y-3,3,0,Math.PI*2); ctx.arc(x+7,y-3,3,0,Math.PI*2); ctx.fill();
         ctx.strokeStyle='#754a1d'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(x+18,y+10); ctx.lineTo(x+25,y-15); ctx.stroke();
-        ctx.fillStyle='#00f2ff'; ctx.beginPath(); ctx.arc(x+25,y-15,5,0,Math.PI*2); ctx.fill(); ctx.restore();
+        ctx.restore();
     }
 
     function drawMon(x, y) {
         ctx.save(); ctx.shadowBlur=10; ctx.shadowColor='#ff2d55'; ctx.fillStyle='#ff2d55'; ctx.beginPath(); ctx.ellipse(x,y,18,16,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='white'; ctx.beginPath(); ctx.moveTo(x-12,y-8); ctx.lineTo(x-4,y-4); ctx.lineTo(x-12,y-2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(x+12,y-8); ctx.lineTo(x+4,y-4); ctx.lineTo(x+12,y-2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(x-6,y+6); ctx.lineTo(x-3,y+12); ctx.lineTo(x,y+6); ctx.lineTo(x+3,y+12); ctx.lineTo(x+6,y+6); ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.moveTo(x+12,y-8); ctx.lineTo(x+4,y-4); ctx.lineTo(x+12,y-2); ctx.fill(); ctx.restore();
     }
 
     function startChain(startX, startY, target, count) {
@@ -184,25 +170,23 @@
         }
     }
 
-    // 메인 루프
     function loop(time) {
         if(gameState === 'over') return;
         ctx.save(); if(shakeTime>0){ ctx.translate(Math.random()*8-4, Math.random()*8-4); shakeTime--; }
         ctx.clearRect(0,0,canvas.width,canvas.height);
         
-        // 배경 격자
         ctx.strokeStyle='#111'; ctx.lineWidth=2;
         for(let i=0;i<canvas.width;i+=60){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,canvas.height);ctx.stroke();}
         for(let i=0;i<canvas.height;i+=60){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(canvas.width,i);ctx.stroke();}
 
         drawWiz(player.x, player.y);
-        if(joystick.active && gameState==='play') {
-            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2); ctx.strokeStyle="rgba(0,242,255,0.2)"; ctx.stroke();
-            ctx.beginPath(); ctx.arc(joystick.originX+joystick.moveVec.x*joystick.maxDist, joystick.originY+joystick.moveVec.y*joystick.maxDist, 30,0,Math.PI*2); ctx.fillStyle="rgba(0,242,255,0.4)"; ctx.fill();
+        if(joystick.active) {
+            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2); ctx.strokeStyle="rgba(0,242,255,0.1)"; ctx.stroke();
+            ctx.beginPath(); ctx.arc(joystick.originX+joystick.moveVec.x*joystick.maxDist, joystick.originY+joystick.moveVec.y*joystick.maxDist, 30,0,Math.PI*2); ctx.fillStyle="rgba(0,242,255,0.3)"; ctx.fill();
         }
 
         enemies.forEach(e => drawMon(e.x, e.y));
-        gems.forEach(g => { ctx.fillStyle='#fff'; ctx.shadowBlur=10; ctx.shadowColor='#00f2ff'; ctx.beginPath(); ctx.arc(g.x,g.y,5,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0; });
+        gems.forEach(g => { ctx.fillStyle='#00f2ff'; ctx.beginPath(); ctx.arc(g.x,g.y,5,0,Math.PI*2); ctx.fill(); });
 
         ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.shadowBlur=20; ctx.shadowColor='#00f2ff';
         lightningChains.forEach((l,i) => {
@@ -215,8 +199,8 @@
                 const side=Math.floor(Math.random()*4); let x,y;
                 if(side===0){x=Math.random()*canvas.width; y=-50;} else if(side===1){x=Math.random()*canvas.width; y=canvas.height+50;}
                 else if(side===2){x=-50; y=Math.random()*canvas.height;} else {x=canvas.width+50; y=Math.random()*canvas.height;}
-                enemies.push({x, y, r:16, spd: 1.1 + (score*0.004)});
-                spawnTimer = time + Math.max(180, 800 - (score*2.5));
+                enemies.push({x, y, r:16, spd: 1.1 + (score*0.005)});
+                spawnTimer = time + Math.max(200, 800 - (score*2));
             }
             player.x = Math.max(20, Math.min(canvas.width-20, player.x + joystick.moveVec.x*player.spd));
             player.y = Math.max(20, Math.min(canvas.height-20, player.y + joystick.moveVec.y*player.spd));
@@ -234,7 +218,12 @@
                 const a=Math.atan2(player.y-e.y, player.x-e.x); e.x+=Math.cos(a)*e.spd; e.y+=Math.sin(a)*e.spd;
                 if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+14) {
                     gameState='over'; document.getElementById('game-over').style.display='flex';
-                    document.getElementById('final-score').innerText = score; loadRank();
+                    document.getElementById('final-score').innerText = score;
+                    onValue(query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(5)), (snap) => {
+                        const d = snap.val(); if(!d) return;
+                        const sorted = Object.values(d).sort((a,b)=>b.score-a.score);
+                        document.getElementById('rank-items').innerHTML = sorted.map((i,idx)=>`<div class="rank-item"><span>${idx+1}. ${i.name}</span><span>${i.score}점</span></div>`).join('');
+                    });
                 }
             });
 
@@ -245,7 +234,7 @@
                     player.xp++; gems.splice(i,1);
                     document.getElementById('xp-bar').style.width = Math.min(100, (player.xp/player.nextXp)*100)+'%';
                     if(player.xp >= player.nextXp) {
-                        player.xp=0; player.lvl++; player.nextXp=Math.floor(player.nextXp*1.5)+3;
+                        player.xp=0; player.lvl++; player.nextXp += 5;
                         document.getElementById('ui-lvl').innerText=player.lvl;
                         gameState='upgrade'; document.getElementById('upgrade-menu').style.display='flex';
                     }
