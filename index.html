@@ -44,7 +44,7 @@
     <div id="upgrade-menu" class="overlay blur-bg" style="display:none">
         <h3 style="color: var(--main-color);">모듈 업그레이드</h3>
         <button class="upgrade-btn" data-type="as">⚡ 공격 속도 증가</button>
-        <button class="upgrade-btn" data-type="range">🌀 연쇄 범위 증가</button>
+        <button class="upgrade-btn" data-type="range">🌀 연쇄 효율 강화</button>
         <button class="upgrade-btn" data-type="spd">🏃 이동 속도 증가</button>
     </div>
 
@@ -55,10 +55,8 @@
             <input type="text" id="player-name" placeholder="닉네임" maxlength="8">
             <button id="btn-save">점수 기록</button>
         </div>
-        <div id="leaderboard-list" style="width: 80%; margin-top: 15px;">
-            <div id="rank-items">순위표 대기 중...</div>
-        </div>
-        <button id="btn-restart">재시작</button>
+        <div id="leaderboard-list" style="width: 80%; margin-top: 15px;"><div id="rank-items">순위표 대기 중...</div></div>
+        <button onclick="location.reload()">재시작</button>
     </div>
     <canvas id="gameCanvas"></canvas>
 </div>
@@ -78,10 +76,7 @@
     };
 
     let db;
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getDatabase(app);
-    } catch (e) { console.error("Firebase 초기화 실패:", e); }
+    try { const app = initializeApp(firebaseConfig); db = getDatabase(app); } catch (e) { console.error(e); }
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -91,9 +86,11 @@
     let player = { x: 270, y: 700, r: 18, spd: 4.2, lvl: 1, xp: 0, nextXp: 5 };
     let enemies = []; let gems = []; let lightningChains = [];
     let score = 0; let shakeTime = 0; let lastAttackTime = 0; let spawnTimer = 0;
-    let stats = { attackSpeed: 3000, chainRange: 165, chainCount: 3 };
+    
+    // [밸런스 패치] 초기 사거리 축소 및 고정값 설정
+    let stats = { attackSpeed: 3000, chainRange: 140, chainCount: 3 };
     let joystick = { active: false, originX: 0, originY: 0, maxDist: 130, moveVec: { x: 0, y: 0 } };
-    let lastEliteScore = 0; // 엘리트 소환 제어용
+    let lastEliteScore = 0;
 
     const getPos = (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -102,141 +99,107 @@
         return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
     };
 
-    const handleStart = (e) => { if(gameState==='play') { joystick.active=true; const p=getPos(e); joystick.originX=p.x; joystick.originY=p.y; } };
-    const handleMove = (e) => {
-        if(!joystick.active || gameState!=='play') return;
-        if(e.cancelable) e.preventDefault();
-        const p = getPos(e);
-        const dx = p.x - joystick.originX; const dy = p.y - joystick.originY;
-        const dist = Math.hypot(dx, dy);
-        if(dist > 0) {
-            const power = Math.min(dist, joystick.maxDist) / joystick.maxDist;
-            // 민감도 조정 (최대 속도의 0.7배로 제한하여 휙 날아가는 것 방지)
-            joystick.moveVec = { x: (dx / dist) * power * 0.7, y: (dy / dist) * power * 0.7 };
-        }
-    };
-    const handleEnd = () => { joystick.active = false; joystick.moveVec = { x: 0, y: 0 }; };
+    window.addEventListener('touchstart', (e) => { if(gameState==='play') e.preventDefault(); joystick.active=true; const p=getPos(e); joystick.originX=p.x; joystick.originY=p.y; }, {passive: false});
+    window.addEventListener('touchmove', (e) => { if(joystick.active) { e.preventDefault(); const p=getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow*0.7, y:(dy/d)*pow*0.7}; } }, {passive: false});
+    window.addEventListener('touchend', () => { joystick.active=false; joystick.moveVec={x:0, y:0}; });
 
-    window.addEventListener('touchstart', (e) => { if(gameState==='play') e.preventDefault(); handleStart(e); }, {passive: false});
-    window.addEventListener('touchmove', handleMove, {passive: false});
-    window.addEventListener('touchend', handleEnd);
-    window.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleEnd);
+    document.getElementById('btn-start').onclick = () => { document.getElementById('start-screen').style.display='none'; gameState='play'; lastAttackTime=performance.now(); requestAnimationFrame(loop); };
 
-    document.getElementById('btn-start').addEventListener('click', () => {
-        document.getElementById('start-screen').style.display='none';
-        gameState='play'; lastAttackTime=performance.now(); requestAnimationFrame(loop);
-    });
-
+    // [밸런스 패치] 업그레이드 시 사거리 무한 성장을 방지
     document.querySelectorAll('.upgrade-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const type = btn.getAttribute('data-type');
-            if(type==='as') stats.attackSpeed = Math.max(300, stats.attackSpeed*0.7);
-            if(type==='range') { stats.chainRange+=50; stats.chainCount+=2; }
-            if(type==='spd') player.spd += 0.8;
-            document.getElementById('upgrade-menu').style.display='none';
-            gameState='play'; lastAttackTime=performance.now();
-        });
+        btn.onclick = () => {
+            const type = btn.dataset.type;
+            if(type==='as') stats.attackSpeed = Math.max(400, stats.attackSpeed*0.7);
+            if(type==='range') { 
+                // 사거리는 220 이상으로 늘어나지 않도록 고정, 대신 연쇄 횟수 증가
+                if(stats.chainRange < 220) stats.chainRange += 15;
+                stats.chainCount += 2; 
+            }
+            if(type==='spd') player.spd += 0.5;
+            document.getElementById('upgrade-menu').style.display='none'; gameState='play'; lastAttackTime=performance.now();
+        };
     });
 
-    document.getElementById('btn-save').addEventListener('click', async () => {
-        if(!db) return alert("데이터베이스 연결 불가");
+    document.getElementById('btn-save').onclick = async () => {
         const name = document.getElementById('player-name').value.trim() || "익명";
-        try {
-            await push(ref(db, 'leaderboard'), { name, score, timestamp: Date.now() });
-            alert("기록 완료!"); document.getElementById('save-area').style.display='none';
-        } catch (err) { console.error("기록 실패:", err); }
-    });
-
-    document.getElementById('btn-restart').addEventListener('click', () => location.reload());
-
-    function drawWiz(x, y) {
-        ctx.save(); ctx.shadowBlur=15; ctx.shadowColor='#00f2ff';
-        ctx.fillStyle='#4ecca3'; ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.moveTo(x-24,y-2); ctx.lineTo(x+24,y-2); ctx.lineTo(x,y-45); ctx.fill();
-        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x-7,y-3,3,0,Math.PI*2); ctx.arc(x+7,y-3,3,0,Math.PI*2); ctx.fill();
-        ctx.restore();
-    }
+        if(score > 0 && db) await push(ref(db, 'leaderboard'), { name, score, timestamp: Date.now() });
+        document.getElementById('save-area').style.display='none';
+    };
 
     function drawMon(e) {
         ctx.save();
         if (e.isElite) {
-            // 피격 시 하얗게 번쩍이는 효과
-            if (e.hitTimer > 0) { ctx.filter = 'brightness(3)'; e.hitTimer--; }
+            if (e.hitEffect > 0) { ctx.filter = "brightness(3)"; e.hitEffect--; }
             ctx.shadowBlur=20; ctx.shadowColor='#a020f0'; ctx.fillStyle='#a020f0';
             ctx.beginPath(); ctx.ellipse(e.x, e.y, 25, 22, 0, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle='yellow';
-            ctx.beginPath(); ctx.moveTo(e.x-15, e.y-10); ctx.lineTo(e.x-5, e.y-5); ctx.lineTo(e.x-15, e.y-2); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(e.x+15, e.y-10); ctx.lineTo(e.x+5, e.y-5); ctx.lineTo(e.x+15, e.y-2); ctx.fill();
-            ctx.fillStyle = "white"; ctx.font = "bold 14px Arial";
-            ctx.fillText("HP: " + e.hp, e.x - 18, e.y - 35);
+            ctx.fillStyle='white'; ctx.font="bold 14px Arial"; ctx.fillText("HP: "+e.hp, e.x-18, e.y-35);
         } else {
             ctx.shadowBlur=10; ctx.shadowColor='#ff2d55'; ctx.fillStyle='#ff2d55';
             ctx.beginPath(); ctx.ellipse(e.x, e.y, 18, 16, 0, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle='white'; ctx.beginPath(); ctx.moveTo(e.x-12, e.y-8); ctx.lineTo(e.x-4, e.y-4); ctx.lineTo(e.x-12, e.y-2); ctx.fill();
-            ctx.beginPath(); ctx.moveTo(e.x+12, e.y-8); ctx.lineTo(e.x+4, e.y-4); ctx.lineTo(e.x+12, e.y-2); ctx.fill();
         }
         ctx.restore();
     }
 
+    // [핵심 패치] 번개가 다음 적을 찾을 때의 거리 제한 로직 강화
     function startChain(startX, startY, target, count) {
         if(!target || count <= 0) return;
         lightningChains.push({ x1: startX, y1: startY, x2: target.x, y2: target.y, life: 10 });
         
         if (target.isElite) {
-            // 한 공격 사이클에 무조건 1씩만 깎이도록 무적 시간(lastHitTime) 체크
             const now = performance.now();
-            if (!target.lastHitTime || now - target.lastHitTime > 500) {
+            if (now - target.lastHit > 500) { 
                 target.hp -= 1;
-                target.hitTimer = 5; // 번쩍임 이펙트
-                target.lastHitTime = now;
+                target.lastHit = now;
+                target.hitEffect = 5;
                 if (target.hp <= 0) {
                     const idx = enemies.indexOf(target);
-                    if(idx > -1) {
-                        for(let i=0; i<5; i++) gems.push({x: target.x + (Math.random()*30-15), y: target.y + (Math.random()*30-15)});
-                        enemies.splice(idx,1); score += 10; // 엘리트는 10점
+                    if(idx > -1) { 
+                        for(let i=0; i<5; i++) gems.push({x: target.x+Math.random()*30-15, y: target.y+Math.random()*30-15});
+                        enemies.splice(idx,1); score += 10; 
                     }
                 }
             }
         } else {
             const idx = enemies.indexOf(target);
-            if(idx > -1) {
-                gems.push({x: target.x, y: target.y}); enemies.splice(idx,1); score++;
-            }
+            if(idx > -1) { gems.push({x: target.x, y: target.y}); enemies.splice(idx,1); score++; }
         }
         
         document.getElementById('ui-kills').innerText = score;
-
+        
         setTimeout(() => {
-            let next = null; let minD = stats.chainRange;
-            enemies.forEach(e => {
-                const d=Math.hypot(e.x-target.x, e.y-target.y);
-                if(d < minD && e !== target){ minD = d; next = e; }
+            let next = null; 
+            let minD = stats.chainRange; // 검색 범위를 현재 설정된 사거리로 강제 제한
+            
+            enemies.forEach(e => { 
+                const d = Math.hypot(e.x - target.x, e.y - target.y);
+                if(d < minD && e !== target) { 
+                    minD = d; 
+                    next = e; 
+                } 
             });
             if(next) startChain(target.x, target.y, next, count-1);
         }, 60);
     }
 
     function loop(time) {
-        if(gameState === 'over') return;
-        ctx.save();
-        if(shakeTime>0){ ctx.translate(Math.random()*8-4, Math.random()*8-4); shakeTime--; }
+        if(gameState !== 'play' && gameState !== 'upgrade') {
+             if(gameState==='over') return;
+             requestAnimationFrame(loop); return;
+        }
+        ctx.save(); if(shakeTime>0){ ctx.translate(Math.random()*8-4, Math.random()*8-4); shakeTime--; }
         ctx.clearRect(0,0,canvas.width,canvas.height);
 
         ctx.strokeStyle='#111'; ctx.lineWidth=2;
         for(let i=0;i<canvas.width;i+=60){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,canvas.height);ctx.stroke();}
         for(let i=0;i<canvas.height;i+=60){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(canvas.width,i);ctx.stroke();}
 
-        drawWiz(player.x, player.y);
-        
+        ctx.save(); ctx.shadowBlur=15; ctx.shadowColor='#00f2ff'; ctx.fillStyle='#4ecca3'; ctx.beginPath(); ctx.arc(player.x,player.y,18,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.moveTo(player.x-24,player.y-2); ctx.lineTo(player.x+24,player.y-2); ctx.lineTo(player.x,player.y-45); ctx.fill(); ctx.restore();
+
         if(joystick.active) {
-            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2);
-            ctx.strokeStyle="rgba(0,242,255,0.15)"; ctx.stroke();
-            const sx = joystick.originX + joystick.moveVec.x * (joystick.maxDist/0.7);
-            const sy = joystick.originY + joystick.moveVec.y * (joystick.maxDist/0.7);
-            ctx.beginPath(); ctx.arc(sx, sy, 45, 0, Math.PI*2);
-            ctx.fillStyle="rgba(0,242,255,0.3)"; ctx.fill();
+            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2); ctx.strokeStyle="rgba(0,242,255,0.1)"; ctx.stroke();
+            const sx=joystick.originX+joystick.moveVec.x*(joystick.maxDist/0.7), sy=joystick.originY+joystick.moveVec.y*(joystick.maxDist/0.7);
+            ctx.beginPath(); ctx.arc(sx, sy, 45, 0, Math.PI*2); ctx.fillStyle="rgba(0,242,255,0.3)"; ctx.fill();
         }
 
         enemies.forEach(e => drawMon(e));
@@ -244,9 +207,7 @@
 
         ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.shadowBlur=20; ctx.shadowColor='#00f2ff';
         lightningChains.forEach((l,i) => {
-            ctx.beginPath(); ctx.moveTo(l.x1,l.y1);
-            ctx.lineTo((l.x1+l.x2)/2+(Math.random()*40-20), (l.y1+l.y2)/2+(Math.random()*40-20));
-            ctx.lineTo(l.x2,l.y2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(l.x1,l.y1); ctx.lineTo((l.x1+l.x2)/2+(Math.random()*40-20), (l.y1+l.y2)/2+(Math.random()*40-20)); ctx.lineTo(l.x2,l.y2); ctx.stroke();
             if(gameState==='play') l.life--; if(l.life<=0) lightningChains.splice(i,1);
         }); ctx.shadowBlur=0;
 
@@ -256,14 +217,13 @@
                 if(side===0){x=Math.random()*canvas.width; y=-60;} else if(side===1){x=Math.random()*canvas.width; y=canvas.height+60;}
                 else if(side===2){x=-60; y=Math.random()*canvas.height;} else {x=canvas.width+60; y=Math.random()*canvas.height;}
                 
-                // 엘리트 몬스터 소환: 정확히 100점 단위일 때 1마리씩
                 if (score >= 100 && Math.floor(score/100) > Math.floor(lastEliteScore/100)) {
-                    enemies.push({x, y, r:22, spd: 0.9 + (score*0.003), isElite: true, hp: 3, lastHitTime: 0, hitTimer: 0});
+                    enemies.push({x, y, r:25, spd: 0.9 + (score*0.003), isElite: true, hp: 3, lastHit: 0, hitEffect: 0});
                     lastEliteScore = score;
                 } else {
                     enemies.push({x, y, r:16, spd: 1.1 + (score*0.008)});
                 }
-                // 난이도 상승폭 조정
+                // 난이도 상승폭 가파르게 유지
                 spawnTimer = time + Math.max(100, 800 - (score*3.5));
             }
 
@@ -272,27 +232,28 @@
 
             if(time - lastAttackTime > stats.attackSpeed) {
                 if(enemies.length > 0) {
-                    let target=enemies[0], minD=Infinity;
-                    enemies.forEach(e=>{const d=Math.hypot(e.x-player.x, e.y-player.y); if(d<minD){minD=d; target=e;}});
-                    startChain(player.x, player.y, target, stats.chainCount); shakeTime=6;
+                    let target=null, minD=stats.chainRange; // 첫 발사도 사거리 내의 적만 타겟팅
+                    enemies.forEach(e=>{
+                        const d=Math.hypot(e.x-player.x, e.y-player.y); 
+                        if(d<minD){minD=d; target=e;}
+                    });
+                    if(target) {
+                        startChain(player.x, player.y, target, stats.chainCount); shakeTime=6;
+                    }
                 }
                 lastAttackTime = time;
             }
 
             enemies.forEach(e => {
                 const a=Math.atan2(player.y-e.y, player.x-e.x); e.x+=Math.cos(a)*e.spd; e.y+=Math.sin(a)*e.spd;
-                const hitDist = e.isElite ? 22 : 14;
-                if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+hitDist) {
+                if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+14) {
                     gameState='over'; document.getElementById('game-over').style.display='flex';
                     document.getElementById('final-score').innerText = score;
-                    if(db) {
-                        const q = query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(5));
-                        onValue(q, (snap) => {
-                            const d = snap.val(); if(!d) return;
-                            const sorted = Object.values(d).sort((a,b)=>b.score-a.score);
-                            document.getElementById('rank-items').innerHTML = sorted.map((i,idx)=>`<div class="rank-item"><span>${idx+1}. ${i.name}</span><span>${i.score}점</span></div>`).join('');
-                        }, { onlyOnce: true });
-                    }
+                    if(db) onValue(query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(5)), (snap) => {
+                        const d=snap.val(); if(!d) return;
+                        const sorted=Object.values(d).sort((a,b)=>b.score-a.score);
+                        document.getElementById('rank-items').innerHTML = sorted.map((i,idx)=>`<div class="rank-item"><span>${idx+1}. ${i.name}</span><span>${i.score}점</span></div>`).join('');
+                    }, {onlyOnce:true});
                 }
             });
 
@@ -303,7 +264,8 @@
                     player.xp++; gems.splice(i,1);
                     document.getElementById('xp-bar').style.width = Math.min(100, (player.xp/player.nextXp)*100)+'%';
                     if(player.xp >= player.nextXp) {
-                        player.xp=0; player.lvl++; player.nextXp += 7;
+                        player.xp=0; player.lvl++; 
+                        player.nextXp += 8; // 성장 곡선 더 억제
                         document.getElementById('ui-lvl').innerText=player.lvl;
                         gameState='upgrade'; document.getElementById('upgrade-menu').style.display='flex';
                     }
