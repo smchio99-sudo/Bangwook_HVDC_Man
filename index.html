@@ -13,7 +13,7 @@
     }
     </script>
     <style>
-        :root { --main-color: #00f2ff; --bg-color: #050508; --enemy-color: #ff2d55; }
+        :root { --main-color: #00f2ff; --bg-color: #050508; --enemy-color: #ff2d55; --elite-color: #a020f0; }
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 177.78vw; max-width: 500px; max-height: 888px; background: var(--bg-color); overflow: hidden; border: 1px solid #1a1a2e; }
         canvas { width: 100%; height: 100%; display: block; }
@@ -58,7 +58,7 @@
         <div id="leaderboard-list" style="width: 80%; margin-top: 15px;">
             <div id="rank-items">순위표 대기 중...</div>
         </div>
-        <button onclick="location.reload()">재시작</button>
+        <button id="btn-restart">재시작</button>
     </div>
     <canvas id="gameCanvas"></canvas>
 </div>
@@ -88,13 +88,12 @@
     canvas.width = 540; canvas.height = 960;
 
     let gameState = 'start';
-    let player = { x: 270, y: 700, r: 18, spd: 4.2, lvl: 1, xp: 0, nextXp: 5 }; // 기본 속도 밸런싱
+    let player = { x: 270, y: 700, r: 18, spd: 4.2, lvl: 1, xp: 0, nextXp: 5 };
     let enemies = []; let gems = []; let lightningChains = [];
     let score = 0; let shakeTime = 0; let lastAttackTime = 0; let spawnTimer = 0;
     let stats = { attackSpeed: 3000, chainRange: 165, chainCount: 3 };
-    
-    // 조이스틱 반경 130 유지
     let joystick = { active: false, originX: 0, originY: 0, maxDist: 130, moveVec: { x: 0, y: 0 } };
+    let lastEliteScore = 0; // 엘리트 소환 제어용
 
     const getPos = (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -112,7 +111,7 @@
         const dist = Math.hypot(dx, dy);
         if(dist > 0) {
             const power = Math.min(dist, joystick.maxDist) / joystick.maxDist;
-            // 이동속도 최대치를 기존 1.3배에서 0.7배로 대폭 하향 조정
+            // 민감도 조정 (최대 속도의 0.7배로 제한하여 휙 날아가는 것 방지)
             joystick.moveVec = { x: (dx / dist) * power * 0.7, y: (dy / dist) * power * 0.7 };
         }
     };
@@ -150,6 +149,8 @@
         } catch (err) { console.error("기록 실패:", err); }
     });
 
+    document.getElementById('btn-restart').addEventListener('click', () => location.reload());
+
     function drawWiz(x, y) {
         ctx.save(); ctx.shadowBlur=15; ctx.shadowColor='#00f2ff';
         ctx.fillStyle='#4ecca3'; ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill();
@@ -158,27 +159,63 @@
         ctx.restore();
     }
 
-    function drawMon(x, y) {
-        ctx.save(); ctx.shadowBlur=10; ctx.shadowColor='#ff2d55';
-        ctx.fillStyle='#ff2d55'; ctx.beginPath(); ctx.ellipse(x,y,18,16,0,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='white'; ctx.beginPath(); ctx.moveTo(x-12,y-8); ctx.lineTo(x-4,y-4); ctx.lineTo(x-12,y-2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(x+12,y-8); ctx.lineTo(x+4,y-4); ctx.lineTo(x+12,y-2); ctx.fill();
+    function drawMon(e) {
+        ctx.save();
+        if (e.isElite) {
+            // 피격 시 하얗게 번쩍이는 효과
+            if (e.hitTimer > 0) { ctx.filter = 'brightness(3)'; e.hitTimer--; }
+            ctx.shadowBlur=20; ctx.shadowColor='#a020f0'; ctx.fillStyle='#a020f0';
+            ctx.beginPath(); ctx.ellipse(e.x, e.y, 25, 22, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle='yellow';
+            ctx.beginPath(); ctx.moveTo(e.x-15, e.y-10); ctx.lineTo(e.x-5, e.y-5); ctx.lineTo(e.x-15, e.y-2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(e.x+15, e.y-10); ctx.lineTo(e.x+5, e.y-5); ctx.lineTo(e.x+15, e.y-2); ctx.fill();
+            ctx.fillStyle = "white"; ctx.font = "bold 14px Arial";
+            ctx.fillText("HP: " + e.hp, e.x - 18, e.y - 35);
+        } else {
+            ctx.shadowBlur=10; ctx.shadowColor='#ff2d55'; ctx.fillStyle='#ff2d55';
+            ctx.beginPath(); ctx.ellipse(e.x, e.y, 18, 16, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle='white'; ctx.beginPath(); ctx.moveTo(e.x-12, e.y-8); ctx.lineTo(e.x-4, e.y-4); ctx.lineTo(e.x-12, e.y-2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(e.x+12, e.y-8); ctx.lineTo(e.x+4, e.y-4); ctx.lineTo(e.x+12, e.y-2); ctx.fill();
+        }
         ctx.restore();
     }
 
     function startChain(startX, startY, target, count) {
         if(!target || count <= 0) return;
         lightningChains.push({ x1: startX, y1: startY, x2: target.x, y2: target.y, life: 10 });
-        const idx = enemies.indexOf(target);
-        if(idx > -1) {
-            gems.push({x: target.x, y: target.y}); enemies.splice(idx,1); score++;
-            document.getElementById('ui-kills').innerText = score;
-            setTimeout(() => {
-                let next = null; let minD = stats.chainRange;
-                enemies.forEach(e => { const d=Math.hypot(e.x-target.x, e.y-target.y); if(d<minD){minD=d; next=e;} });
-                if(next) startChain(target.x, target.y, next, count-1);
-            }, 60);
+        
+        if (target.isElite) {
+            // 한 공격 사이클에 무조건 1씩만 깎이도록 무적 시간(lastHitTime) 체크
+            const now = performance.now();
+            if (!target.lastHitTime || now - target.lastHitTime > 500) {
+                target.hp -= 1;
+                target.hitTimer = 5; // 번쩍임 이펙트
+                target.lastHitTime = now;
+                if (target.hp <= 0) {
+                    const idx = enemies.indexOf(target);
+                    if(idx > -1) {
+                        for(let i=0; i<5; i++) gems.push({x: target.x + (Math.random()*30-15), y: target.y + (Math.random()*30-15)});
+                        enemies.splice(idx,1); score += 10; // 엘리트는 10점
+                    }
+                }
+            }
+        } else {
+            const idx = enemies.indexOf(target);
+            if(idx > -1) {
+                gems.push({x: target.x, y: target.y}); enemies.splice(idx,1); score++;
+            }
         }
+        
+        document.getElementById('ui-kills').innerText = score;
+
+        setTimeout(() => {
+            let next = null; let minD = stats.chainRange;
+            enemies.forEach(e => {
+                const d=Math.hypot(e.x-target.x, e.y-target.y);
+                if(d < minD && e !== target){ minD = d; next = e; }
+            });
+            if(next) startChain(target.x, target.y, next, count-1);
+        }, 60);
     }
 
     function loop(time) {
@@ -196,13 +233,13 @@
         if(joystick.active) {
             ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2);
             ctx.strokeStyle="rgba(0,242,255,0.15)"; ctx.stroke();
-            const sx = joystick.originX + joystick.moveVec.x * (joystick.maxDist/0.7); // 비주얼 피드백은 스틱 위치 유지
+            const sx = joystick.originX + joystick.moveVec.x * (joystick.maxDist/0.7);
             const sy = joystick.originY + joystick.moveVec.y * (joystick.maxDist/0.7);
             ctx.beginPath(); ctx.arc(sx, sy, 45, 0, Math.PI*2);
             ctx.fillStyle="rgba(0,242,255,0.3)"; ctx.fill();
         }
 
-        enemies.forEach(e => drawMon(e.x, e.y));
+        enemies.forEach(e => drawMon(e));
         gems.forEach(g => { ctx.fillStyle='#00f2ff'; ctx.beginPath(); ctx.arc(g.x,g.y,5,0,Math.PI*2); ctx.fill(); });
 
         ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.shadowBlur=20; ctx.shadowColor='#00f2ff';
@@ -216,12 +253,20 @@
         if(gameState === 'play') {
             if(time > spawnTimer) {
                 const side=Math.floor(Math.random()*4); let x,y;
-                if(side===0){x=Math.random()*canvas.width; y=-50;} else if(side===1){x=Math.random()*canvas.width; y=canvas.height+50;}
-                else if(side===2){x=-50; y=Math.random()*canvas.height;} else {x=canvas.width+50; y=Math.random()*canvas.height;}
-                enemies.push({x, y, r:16, spd: 1.1 + (score*0.005)});
-                spawnTimer = time + Math.max(180, 800 - (score*2.2));
+                if(side===0){x=Math.random()*canvas.width; y=-60;} else if(side===1){x=Math.random()*canvas.width; y=canvas.height+60;}
+                else if(side===2){x=-60; y=Math.random()*canvas.height;} else {x=canvas.width+60; y=Math.random()*canvas.height;}
+                
+                // 엘리트 몬스터 소환: 정확히 100점 단위일 때 1마리씩
+                if (score >= 100 && Math.floor(score/100) > Math.floor(lastEliteScore/100)) {
+                    enemies.push({x, y, r:22, spd: 0.9 + (score*0.003), isElite: true, hp: 3, lastHitTime: 0, hitTimer: 0});
+                    lastEliteScore = score;
+                } else {
+                    enemies.push({x, y, r:16, spd: 1.1 + (score*0.008)});
+                }
+                // 난이도 상승폭 조정
+                spawnTimer = time + Math.max(100, 800 - (score*3.5));
             }
-            // 최종 이동 로직: 조이스틱 벡터와 플레이어 스피드 곱
+
             player.x = Math.max(20, Math.min(canvas.width-20, player.x + joystick.moveVec.x*player.spd));
             player.y = Math.max(20, Math.min(canvas.height-20, player.y + joystick.moveVec.y*player.spd));
 
@@ -236,7 +281,8 @@
 
             enemies.forEach(e => {
                 const a=Math.atan2(player.y-e.y, player.x-e.x); e.x+=Math.cos(a)*e.spd; e.y+=Math.sin(a)*e.spd;
-                if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+14) {
+                const hitDist = e.isElite ? 22 : 14;
+                if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+hitDist) {
                     gameState='over'; document.getElementById('game-over').style.display='flex';
                     document.getElementById('final-score').innerText = score;
                     if(db) {
@@ -257,7 +303,7 @@
                     player.xp++; gems.splice(i,1);
                     document.getElementById('xp-bar').style.width = Math.min(100, (player.xp/player.nextXp)*100)+'%';
                     if(player.xp >= player.nextXp) {
-                        player.xp=0; player.lvl++; player.nextXp += 5;
+                        player.xp=0; player.lvl++; player.nextXp += 7;
                         document.getElementById('ui-lvl').innerText=player.lvl;
                         gameState='upgrade'; document.getElementById('upgrade-menu').style.display='flex';
                     }
