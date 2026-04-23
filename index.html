@@ -4,9 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>⚡ Bangwook HVDC man ⚡</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+      }
+    }
+    </script>
     <style>
         :root { --main-color: #00f2ff; --bg-color: #050508; --enemy-color: #ff2d55; }
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; touch-action: none; }
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 177.78vw; max-width: 500px; max-height: 888px; background: var(--bg-color); overflow: hidden; border: 1px solid #1a1a2e; }
         canvas { width: 100%; height: 100%; display: block; }
         
@@ -14,147 +22,151 @@
         .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; text-align: center; }
         .blur-bg { background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(10px); }
         
-        #xp-bar-container { position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: rgba(255,255,255,0.05); z-index: 50; }
-        #xp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--main-color), #7000ff); box-shadow: 0 0 15px var(--main-color); transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+        #xp-bar-container { position: absolute; top: 0; left: 0; width: 100%; height: 10px; background: rgba(255,255,255,0.05); z-index: 50; }
+        #xp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--main-color), #7000ff); box-shadow: 0 0 15px var(--main-color); transition: width 0.3s ease-out; }
         
-        .stat-label { position: absolute; top: 20px; left: 20px; color: var(--main-color); font-weight: bold; z-index: 50; font-size: 12px; letter-spacing: 1px; }
+        .stat-label { position: absolute; top: 22px; left: 20px; color: var(--main-color); font-weight: bold; z-index: 50; font-size: 14px; letter-spacing: 1px; }
         
-        button { 
-            padding: 16px 50px; font-size: 1.1rem; background: transparent; 
-            border: 2px solid var(--main-color); border-radius: 4px; color: var(--main-color); font-weight: bold; 
-            cursor: pointer; margin-top: 30px; transition: all 0.3s;
-            text-transform: uppercase; letter-spacing: 2px;
-        }
-        button:hover { background: var(--main-color); color: #000; box-shadow: 0 0 20px var(--main-color); }
+        button { padding: 15px 40px; font-size: 1.1rem; background: transparent; border: 2px solid var(--main-color); border-radius: 8px; color: var(--main-color); font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.3s; }
+        button:active { background: var(--main-color); color: #000; }
         
-        .upgrade-btn { width: 85%; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(0, 242, 255, 0.3); margin: 8px; padding: 20px; border-radius: 8px; font-size: 1rem; color: #fff; }
-        .upgrade-btn:hover { border-color: var(--main-color); background: rgba(0, 242, 255, 0.1); }
+        .upgrade-btn { width: 85%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(0, 242, 255, 0.3); margin: 8px; padding: 20px; border-radius: 12px; font-size: 1.1rem; color: #fff; }
         
-        h1 { font-size: 2.8rem; color: #fff; text-shadow: 0 0 15px var(--main-color); margin: 0; font-style: italic; font-weight: 900; }
-        h2 { font-size: 2rem; color: var(--enemy-color); text-shadow: 0 0 10px var(--enemy-color); margin-bottom: 10px; }
-        .score-display { font-size: 3rem; font-weight: bold; color: var(--main-color); margin: 10px 0; }
+        h1 { font-size: 2.8rem; color: #fff; text-shadow: 0 0 15px var(--main-color); margin: 0; font-weight: 900; line-height: 1.2; }
+        .score-display { font-size: 3rem; font-weight: bold; color: var(--main-color); margin: 5px 0; }
+
+        /* 리더보드 스타일 */
+        #leaderboard-list { width: 85%; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px; font-size: 0.9rem; margin-top: 15px; }
+        .rank-item { display: flex; justify-content: space-between; margin: 4px 0; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        #player-name { padding: 10px; border-radius: 5px; border: 1px solid var(--main-color); background: #000; color: #fff; text-align: center; margin-bottom: 10px; width: 140px; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <div id="xp-bar-container"><div id="xp-bar"></div></div>
-    <div class="stat-label">LV. <span id="ui-lvl">1</span> | SCORE: <span id="ui-kills">0</span></div>
+    <div class="stat-label">LV. <span id="ui-lvl">1</span> | 점수: <span id="ui-kills">0</span></div>
 
     <div id="start-screen" class="overlay" style="background: var(--bg-color);">
-        <p style="color: var(--main-color); margin-bottom: 5px; letter-spacing: 3px;">HIGH VOLTAGE</p>
+        <p style="color: var(--main-color); margin-bottom: 5px; letter-spacing: 3px;">고압 전류 가동 준비</p>
         <h1>BANGWOOK<br>HVDC MAN</h1>
-        <button id="btn-start">ACTIVATE</button>
+        <button id="btn-start">시스텡 가동</button>
     </div>
 
     <div id="upgrade-menu" class="overlay blur-bg" style="display:none">
-        <p style="color: var(--main-color); margin-bottom: 10px;">CORE STABILIZED</p>
-        <h3 style="font-size: 1.8rem; margin: 0 0 20px 0;">UPGRADE MODULE</h3>
-        <button class="upgrade-btn" onclick="applyUpgrade('as')">⚡ ATTACK FREQUENCY</button>
-        <button class="upgrade-btn" onclick="applyUpgrade('range')">🌀 CHAIN CONDUCTIVITY</button>
-        <button class="upgrade-btn" onclick="applyUpgrade('spd')">🏃 MOTOR MOBILITY</button>
+        <h3 style="font-size: 1.8rem; color: var(--main-color); margin-bottom: 20px;">모듈 업그레이드 선택</h3>
+        <button class="upgrade-btn" onclick="applyUpgrade('as')">⚡ 공격 속도(회로 효율) 증가</button>
+        <button class="upgrade-btn" onclick="applyUpgrade('range')">🌀 연쇄 범위(전도율) 증가</button>
+        <button class="upgrade-btn" onclick="applyUpgrade('spd')">🏃 이동 속도(출력) 증가</button>
     </div>
 
     <div id="game-over" class="overlay blur-bg" style="display:none">
-        <h2>CORE MELTDOWN</h2>
-        <p style="color: #aaa; margin: 0;">FINAL SCORE</p>
+        <h2 style="color: var(--enemy-color); font-size: 2.2rem; margin: 0;">시스템 과부하</h2>
         <div class="score-display" id="final-score">0</div>
-        <button onclick="location.reload()">REBOOT</button>
+        
+        <div id="save-area">
+            <input type="text" id="player-name" placeholder="닉네임" maxlength="8">
+            <button id="btn-save" style="margin-top:0; padding: 10px 20px; font-size: 0.9rem;">점수 기록</button>
+        </div>
+
+        <div id="leaderboard-list">
+            <div id="rank-items">순위표 불러오는 중...</div>
+        </div>
+
+        <button onclick="location.reload()" style="margin-top: 15px; padding: 10px 30px;">재시작</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 </div>
 
-<script>
+<script type="module">
+    import { initializeApp } from "firebase/app";
+    import { getDatabase, ref, set, push, onValue, query, orderByChild, limitToLast } from "firebase/database";
+
+    // Firebase 설정
+    const firebaseConfig = {
+        apiKey: "AIzaSyA7ut0Tm4qr4dGI3QnJD8kDREWgvKOhljA",
+        authDomain: "bangwook-hvdc-man.firebaseapp.com",
+        projectId: "bangwook-hvdc-man",
+        storageBucket: "bangwook-hvdc-man.firebasestorage.app",
+        messagingSenderId: "294360346215",
+        appId: "1:294360346215:web:573eb77863ef1b66422ec2"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 540;
-    canvas.height = 960;
+    canvas.width = 540; canvas.height = 960;
 
+    // 게임 상태 및 변수
     let gameState = 'start';
-    let player = { x: 270, y: 700, r: 18, spd: 3.2, lvl: 1, xp: 0, nextXp: 5 }; // 캐릭터 속도 낮춤
-    let enemies = [];
-    let gems = [];
-    let lightningChains = [];
-    let score = 0;
-    let shakeTime = 0;
-    let lastAttackTime = 0;
-    let spawnTimer = 0;
-    
+    let player = { x: 270, y: 700, r: 18, spd: 3.2, lvl: 1, xp: 0, nextXp: 5 };
+    let enemies = []; let gems = []; let lightningChains = [];
+    let score = 0; let shakeTime = 0; let lastAttackTime = 0; let spawnTimer = 0;
     let stats = { attackSpeed: 3000, chainRange: 160, chainCount: 3 };
-
-    // 조이스틱 설정 (크기와 민감도 조정)
     let joystick = { active: false, originX: 0, originY: 0, currX: 0, currY: 0, maxDist: 85, moveVec: { x: 0, y: 0 } };
 
-    const getCanvasPos = (e) => {
+    // 조작 이벤트
+    const getPos = (e) => {
         const rect = canvas.getBoundingClientRect();
-        const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
-        const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
     };
 
-    const handleStart = (e) => {
-        if(gameState !== 'play') return;
-        const pos = getCanvasPos(e);
-        joystick.active = true;
-        joystick.originX = pos.x; joystick.originY = pos.y;
-        joystick.currX = pos.x; joystick.currY = pos.y;
+    window.addEventListener('touchstart', (e) => { if(gameState==='play') { e.preventDefault(); const p = getPos(e); joystick.active=true; joystick.originX=p.x; joystick.originY=p.y; } }, {passive:false});
+    window.addEventListener('touchmove', (e) => { if(joystick.active) { e.preventDefault(); const p = getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow, y:(dy/d)*pow}; } }, {passive:false});
+    window.addEventListener('touchend', () => { joystick.active=false; joystick.moveVec={x:0, y:0}; });
+    
+    // 마우스 지원 (PC 테스트용)
+    window.addEventListener('mousedown', (e) => { if(gameState==='play') { const p = getPos(e); joystick.active=true; joystick.originX=p.x; joystick.originY=p.y; } });
+    window.addEventListener('mousemove', (e) => { if(joystick.active) { const p = getPos(e); const dx=p.x-joystick.originX, dy=p.y-joystick.originY, d=Math.hypot(dx,dy); if(d>0){const pow=Math.min(d, joystick.maxDist)/joystick.maxDist; joystick.moveVec={x:(dx/d)*pow, y:(dy/d)*pow};} } });
+    window.addEventListener('mouseup', () => { joystick.active=false; joystick.moveVec={x:0, y:0}; });
+
+    document.getElementById('btn-start').onclick = () => { document.getElementById('start-screen').style.display='none'; gameState='play'; lastAttackTime=performance.now(); requestAnimationFrame(loop); };
+
+    // 리더보드 로직
+    window.applyUpgrade = (type) => {
+        if(type==='as') stats.attackSpeed = Math.max(300, stats.attackSpeed*0.7);
+        if(type==='range') { stats.chainRange+=50; stats.chainCount+=2; }
+        if(type==='spd') player.spd += 0.6;
+        document.getElementById('upgrade-menu').style.display='none'; gameState='play'; lastAttackTime=performance.now();
     };
 
-    const handleMove = (e) => {
-        if(!joystick.active || gameState !== 'play') return;
-        const pos = getCanvasPos(e);
-        joystick.currX = pos.x; joystick.currY = pos.y;
-
-        const dx = joystick.currX - joystick.originX;
-        const dy = joystick.currY - joystick.originY;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist > 0) {
-            // 민감도 완화를 위해 maxDist를 늘리고 거리에 따른 가중치를 부드럽게 조정
-            const power = Math.min(dist, joystick.maxDist) / joystick.maxDist;
-            joystick.moveVec.x = (dx / dist) * power;
-            joystick.moveVec.y = (dy / dist) * power;
-        }
-    };
-
-    const handleEnd = () => { joystick.active = false; joystick.moveVec = { x: 0, y: 0 }; };
-
-    window.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleEnd);
-    window.addEventListener('touchstart', (e) => { if(gameState === 'play') e.preventDefault(); handleStart(e); }, {passive: false});
-    window.addEventListener('touchmove', (e) => { if(gameState === 'play') e.preventDefault(); handleMove(e); }, {passive: false});
-    window.addEventListener('touchend', handleEnd);
-
-    document.getElementById('btn-start').addEventListener('click', () => { startGame(); });
-
-    function startGame() {
-        document.getElementById('start-screen').style.display = 'none';
-        gameState = 'play';
-        lastAttackTime = performance.now();
-        requestAnimationFrame(loop);
-    }
-
-    function createEnemy() {
-        const side = Math.floor(Math.random() * 4);
-        let x, y;
-        if(side === 0) { x = Math.random()*canvas.width; y = -50; }
-        else if(side === 1) { x = Math.random()*canvas.width; y = canvas.height+50; }
-        else if(side === 2) { x = -50; y = Math.random()*canvas.height; }
-        else { x = canvas.width+50; y = Math.random()*canvas.height; }
-        // 적 속도 낮춤 (기본 1.5 -> 1.2)
-        enemies.push({ x, y, r: 15, spd: 1.2 + (score * 0.004), color: '#ff2d55' });
-    }
-
-    function triggerLightning() {
-        if(enemies.length === 0) return;
-        let target = null; let minDist = Infinity;
-        enemies.forEach(e => {
-            const d = Math.hypot(e.x - player.x, e.y - player.y);
-            if(d < minDist) { minDist = d; target = e; }
+    const saveScore = () => {
+        const name = document.getElementById('player-name').value.trim() || "익명";
+        if(score <= 0) return;
+        push(ref(db, 'leaderboard'), { name, score, timestamp: Date.now() }).then(() => {
+            alert("점수가 등록되었습니다!"); document.getElementById('save-area').style.display='none';
         });
-        if(target) { startChain(player.x, player.y, target, stats.chainCount); shakeTime = 6; }
+    };
+    document.getElementById('btn-save').onclick = saveScore;
+
+    const loadRank = () => {
+        const q = query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(5));
+        onValue(q, (snap) => {
+            const data = snap.val(); if(!data) { document.getElementById('rank-items').innerHTML="첫 기록을 남겨보세요!"; return; }
+            const sorted = Object.values(data).sort((a,b)=>b.score-a.score);
+            document.getElementById('rank-items').innerHTML = sorted.map((i,idx)=>`<div class="rank-item"><span>${idx+1}. ${i.name}</span><span>${i.score}점</span></div>`).join('');
+        });
+    };
+
+    // 그리기 함수들
+    function drawWiz(x, y) {
+        ctx.save(); ctx.shadowBlur=15; ctx.shadowColor='#00f2ff'; ctx.fillStyle='#4ecca3'; ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#1a1a2e'; ctx.beginPath(); ctx.moveTo(x-24,y-2); ctx.lineTo(x+24,y-2); ctx.lineTo(x,y-45); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x-7,y-3,3,0,Math.PI*2); ctx.arc(x+7,y-3,3,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#754a1d'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(x+18,y+10); ctx.lineTo(x+25,y-15); ctx.stroke();
+        ctx.fillStyle='#00f2ff'; ctx.beginPath(); ctx.arc(x+25,y-15,5,0,Math.PI*2); ctx.fill(); ctx.restore();
+    }
+
+    function drawMon(x, y) {
+        ctx.save(); ctx.shadowBlur=10; ctx.shadowColor='#ff2d55'; ctx.fillStyle='#ff2d55'; ctx.beginPath(); ctx.ellipse(x,y,18,16,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='white'; ctx.beginPath(); ctx.moveTo(x-12,y-8); ctx.lineTo(x-4,y-4); ctx.lineTo(x-12,y-2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x+12,y-8); ctx.lineTo(x+4,y-4); ctx.lineTo(x+12,y-2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x-6,y+6); ctx.lineTo(x-3,y+12); ctx.lineTo(x,y+6); ctx.lineTo(x+3,y+12); ctx.lineTo(x+6,y+6); ctx.fill(); ctx.restore();
     }
 
     function startChain(startX, startY, target, count) {
@@ -162,119 +174,86 @@
         lightningChains.push({ x1: startX, y1: startY, x2: target.x, y2: target.y, life: 12 });
         const idx = enemies.indexOf(target);
         if(idx > -1) {
-            gems.push({x: target.x, y: target.y});
-            enemies.splice(idx, 1);
-            score++;
+            gems.push({x: target.x, y: target.y}); enemies.splice(idx,1); score++;
             document.getElementById('ui-kills').innerText = score;
             setTimeout(() => {
-                let nextTarget = null; let nextMinDist = stats.chainRange;
-                enemies.forEach(e => {
-                    const d = Math.hypot(e.x - target.x, e.y - target.y);
-                    if(d < nextMinDist) { nextMinDist = d; nextTarget = e; }
-                });
-                if(nextTarget) startChain(target.x, target.y, nextTarget, count - 1);
+                let next = null; let minD = stats.chainRange;
+                enemies.forEach(e => { const d=Math.hypot(e.x-target.x, e.y-target.y); if(d<minD){minD=d; next=e;} });
+                if(next) startChain(target.x, target.y, next, count-1);
             }, 60);
         }
     }
 
-    function applyUpgrade(type) {
-        if(type === 'as') stats.attackSpeed = Math.max(300, stats.attackSpeed * 0.7);
-        if(type === 'range') { stats.chainRange += 50; stats.chainCount += 2; }
-        if(type === 'spd') player.spd += 0.6;
-        document.getElementById('upgrade-menu').style.display = 'none';
-        gameState = 'play';
-        lastAttackTime = performance.now();
-    }
-
+    // 메인 루프
     function loop(time) {
-        ctx.save();
-        if(shakeTime > 0) { ctx.translate(Math.random()*8 - 4, Math.random()*8 - 4); shakeTime--; }
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if(gameState === 'over') return;
+        ctx.save(); if(shakeTime>0){ ctx.translate(Math.random()*8-4, Math.random()*8-4); shakeTime--; }
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        
+        // 배경 격자
+        ctx.strokeStyle='#111'; ctx.lineWidth=2;
+        for(let i=0;i<canvas.width;i+=60){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,canvas.height);ctx.stroke();}
+        for(let i=0;i<canvas.height;i+=60){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(canvas.width,i);ctx.stroke();}
 
-        // 세련된 배경 격자
-        ctx.strokeStyle = '#11111a'; ctx.lineWidth = 2;
-        for(let i=0; i<canvas.width; i+=60) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke(); }
-        for(let i=0; i<canvas.height; i+=60) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke(); }
-
-        // 플레이어 (글로우 효과)
-        ctx.shadowBlur = 15; ctx.shadowColor = varColor('--main-color');
-        ctx.fillStyle = varColor('--main-color');
-        ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#fff'; // 눈
-        ctx.fillRect(player.x-8, player.y-4, 4, 4); ctx.fillRect(player.x+4, player.y-4, 4, 4);
-
-        // 조이스틱 디자인
-        if(joystick.active && gameState === 'play') {
-            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2);
-            ctx.strokeStyle = "rgba(0, 242, 255, 0.2)"; ctx.lineWidth = 2; ctx.stroke();
-            const stickX = joystick.originX + joystick.moveVec.x * joystick.maxDist;
-            const stickY = joystick.originY + joystick.moveVec.y * joystick.maxDist;
-            ctx.beginPath(); ctx.arc(stickX, stickY, 30, 0, Math.PI*2);
-            ctx.fillStyle = "rgba(0, 242, 255, 0.4)"; ctx.fill();
+        drawWiz(player.x, player.y);
+        if(joystick.active && gameState==='play') {
+            ctx.beginPath(); ctx.arc(joystick.originX, joystick.originY, joystick.maxDist, 0, Math.PI*2); ctx.strokeStyle="rgba(0,242,255,0.2)"; ctx.stroke();
+            ctx.beginPath(); ctx.arc(joystick.originX+joystick.moveVec.x*joystick.maxDist, joystick.originY+joystick.moveVec.y*joystick.maxDist, 30,0,Math.PI*2); ctx.fillStyle="rgba(0,242,255,0.4)"; ctx.fill();
         }
 
-        // 적군 (네온 붉은색)
-        enemies.forEach(e => {
-            ctx.shadowBlur = 10; ctx.shadowColor = e.color;
-            ctx.fillStyle = e.color;
-            ctx.beginPath(); ctx.roundRect(e.x-14, e.y-14, 28, 28, 4); ctx.fill();
-            ctx.shadowBlur = 0;
-        });
+        enemies.forEach(e => drawMon(e.x, e.y));
+        gems.forEach(g => { ctx.fillStyle='#fff'; ctx.shadowBlur=10; ctx.shadowColor='#00f2ff'; ctx.beginPath(); ctx.arc(g.x,g.y,5,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0; });
 
-        // 보석
-        gems.forEach(g => {
-            ctx.fillStyle = '#fff'; ctx.shadowBlur = 10; ctx.shadowColor = varColor('--main-color');
-            ctx.beginPath(); ctx.arc(g.x, g.y, 5, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
-        });
-
-        // 번개 (더 굵고 화려하게)
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.shadowBlur = 20; ctx.shadowColor = varColor('--main-color');
-        lightningChains.forEach((l, i) => {
-            ctx.beginPath(); ctx.moveTo(l.x1, l.y1);
-            let mx = (l.x1 + l.x2)/2 + (Math.random()*50-25);
-            let my = (l.y1 + l.y2)/2 + (Math.random()*50-25);
-            ctx.lineTo(mx, my); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-            if(gameState === 'play') l.life--;
-            if(l.life <= 0) lightningChains.splice(i, 1);
-        });
-        ctx.shadowBlur = 0;
+        ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.shadowBlur=20; ctx.shadowColor='#00f2ff';
+        lightningChains.forEach((l,i) => {
+            ctx.beginPath(); ctx.moveTo(l.x1,l.y1); ctx.lineTo((l.x1+l.x2)/2+(Math.random()*40-20), (l.y1+l.y2)/2+(Math.random()*40-20)); ctx.lineTo(l.x2,l.y2); ctx.stroke();
+            if(gameState==='play') l.life--; if(l.life<=0) lightningChains.splice(i,1);
+        }); ctx.shadowBlur=0;
 
         if(gameState === 'play') {
-            if(time > spawnTimer) { createEnemy(); spawnTimer = time + Math.max(180, 800 - (score * 2.5)); }
-            player.x = Math.max(20, Math.min(canvas.width-20, player.x + joystick.moveVec.x * player.spd));
-            player.y = Math.max(20, Math.min(canvas.height-20, player.y + joystick.moveVec.y * player.spd));
+            if(time > spawnTimer) {
+                const side=Math.floor(Math.random()*4); let x,y;
+                if(side===0){x=Math.random()*canvas.width; y=-50;} else if(side===1){x=Math.random()*canvas.width; y=canvas.height+50;}
+                else if(side===2){x=-50; y=Math.random()*canvas.height;} else {x=canvas.width+50; y=Math.random()*canvas.height;}
+                enemies.push({x, y, r:16, spd: 1.1 + (score*0.004)});
+                spawnTimer = time + Math.max(180, 800 - (score*2.5));
+            }
+            player.x = Math.max(20, Math.min(canvas.width-20, player.x + joystick.moveVec.x*player.spd));
+            player.y = Math.max(20, Math.min(canvas.height-20, player.y + joystick.moveVec.y*player.spd));
 
-            if(time - lastAttackTime > stats.attackSpeed) { triggerLightning(); lastAttackTime = time; }
-            
+            if(time - lastAttackTime > stats.attackSpeed) {
+                if(enemies.length > 0) {
+                    let target=enemies[0], minD=Infinity;
+                    enemies.forEach(e=>{const d=Math.hypot(e.x-player.x, e.y-player.y); if(d<minD){minD=d; target=e;}});
+                    startChain(player.x, player.y, target, stats.chainCount); shakeTime=6;
+                }
+                lastAttackTime = time;
+            }
+
             enemies.forEach(e => {
-                const angle = Math.atan2(player.y - e.y, player.x - e.x);
-                e.x += Math.cos(angle) * e.spd; e.y += Math.sin(angle) * e.spd;
-                if(Math.hypot(player.x - e.x, player.y - e.y) < player.r + 12) {
-                    gameState = 'over';
-                    document.getElementById('game-over').style.display = 'flex';
-                    document.getElementById('final-score').innerText = score;
+                const a=Math.atan2(player.y-e.y, player.x-e.x); e.x+=Math.cos(a)*e.spd; e.y+=Math.sin(a)*e.spd;
+                if(Math.hypot(player.x-e.x, player.y-e.y) < player.r+14) {
+                    gameState='over'; document.getElementById('game-over').style.display='flex';
+                    document.getElementById('final-score').innerText = score; loadRank();
                 }
             });
-            gems.forEach((g, i) => {
-                const dist = Math.hypot(player.x - g.x, player.y - g.y);
-                if(dist < 120) { g.x += (player.x - g.x) * 0.2; g.y += (player.y - g.y) * 0.2; }
-                if(dist < 25) {
-                    player.xp++; gems.splice(i, 1);
-                    document.getElementById('xp-bar').style.width = Math.min(100, (player.xp / player.nextXp) * 100) + '%';
+
+            gems.forEach((g,i) => {
+                const d=Math.hypot(player.x-g.x, player.y-g.y);
+                if(d<120){ g.x+=(player.x-g.x)*0.2; g.y+=(player.y-g.y)*0.2; }
+                if(d<25){
+                    player.xp++; gems.splice(i,1);
+                    document.getElementById('xp-bar').style.width = Math.min(100, (player.xp/player.nextXp)*100)+'%';
                     if(player.xp >= player.nextXp) {
-                        player.xp = 0; player.lvl++; player.nextXp = Math.floor(player.nextXp * 1.5) + 3;
-                        document.getElementById('ui-lvl').innerText = player.lvl;
-                        gameState = 'upgrade';
-                        document.getElementById('upgrade-menu').style.display = 'flex';
+                        player.xp=0; player.lvl++; player.nextXp=Math.floor(player.nextXp*1.5)+3;
+                        document.getElementById('ui-lvl').innerText=player.lvl;
+                        gameState='upgrade'; document.getElementById('upgrade-menu').style.display='flex';
                     }
                 }
             });
         }
-        ctx.restore();
-        requestAnimationFrame(loop);
+        ctx.restore(); requestAnimationFrame(loop);
     }
-    function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 </script>
 </body>
 </html>
